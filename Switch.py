@@ -20,6 +20,8 @@ class Switch(mqtt.Client):
     def __init__(self, switchId, bulbId):                 
         self.__switchId = switchId
         self.__bulbId  = bulbId
+        self.__brightness = 0
+        self.__brightnessStep = 20
 
         self._shutdownHandler = ProcessShutdown()        
         self.__lwtTopic = f"test/status"           
@@ -27,14 +29,53 @@ class Switch(mqtt.Client):
        
     def on_message(self, mqttc, obj, msg): 
         data = json.loads(msg.payload.decode("UTF-8"))
-        action = data["action"]
 
-        if action == "on_press_release":
-            self.publish(f"zigbee2mqtt/{self.__bulbId }/set",'{"state": "TOGGLE"}')
-            logging.info(f"Toggle status for {self.__bulbId}")
+        if(self.__switchId in msg.topic):
+            action = data["action"]
 
+            if action == "on_press_release":
+                self.publish(f"zigbee2mqtt/{self.__bulbId }/set",'{"state": "TOGGLE"}')
+                logging.info(f"On press for {self.__bulbId}")
 
- 
+            if action == "off_press_release":                
+                logging.info(f"Off press for {self.__bulbId}")
+
+            if action == "up_press_release":                
+                self.increaseBrightnessValue()
+                val = {}
+                val["brightness"] = self.__brightness
+                self.publish(f"zigbee2mqtt/{self.__bulbId }/set",json.dumps(val))
+                #self.publish(f"zigbee2mqtt/{self.__bulbId }/set",'{"state": "TOGGLE"}')
+                logging.info(f"Up press for {self.__bulbId}")
+
+            if action == "down_press_release":
+                self.decreaseBrightnessValue()
+                val = {}
+                val["brightness"] = self.__brightness
+                self.publish(f"zigbee2mqtt/{self.__bulbId }/set",json.dumps(val))
+                logging.info(f"Down press for {self.__bulbId}")
+        
+        if(self.__bulbId in msg.topic):
+            self.__brightness = data["brightness"]
+             
+    def increaseBrightnessValue(self):
+        self.__brightness += self.__brightnessStep
+
+        if self.__brightness > 254:
+            self.__brightness = 254
+        
+        if self.__brightness < 0:
+            self.__brightness = 0
+
+    def decreaseBrightnessValue(self):
+        self.__brightness -= self.__brightnessStep
+
+        if self.__brightness > 254:
+            self.__brightness = 254
+        
+        if self.__brightness < 0:
+            self.__brightness = 0
+
     def on_connect(self, mqttc, obj, flags, rc):
         self.publish(self.__lwtTopic,"2" , retain=True)  
         logging.info("Connection to MQTT broker successful")
@@ -50,7 +91,9 @@ class Switch(mqtt.Client):
 
     def run(self):
         rc = 0        
-        self.subscribe(f"zigbee2mqtt/{self.__switchId}",0)   
+        self.subscribe(f"zigbee2mqtt/{self.__switchId}",0)
+        self.subscribe(f"zigbee2mqtt/{self.__bulbId}",0)
+        self.publish(f"zigbee2mqtt/{self.__bulbId }/get",'{"brightness": ""}')
         while rc == 0:
             if(self._shutdownHandler.sc):
                 return
